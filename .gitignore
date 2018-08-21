@@ -1,0 +1,14 @@
+# Git
+.git
+
+# Vim
+.*.swp
+.swp
+
+# Python
+*.pyc
+*.egg-info
+.cache
+
+# Dist
+dist/
