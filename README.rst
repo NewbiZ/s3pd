@@ -1,16 +1,16 @@
 S3 parallel downloader
 ----------------------
 
-`s3cp` is both a python library and a command line tool to download files from S3 in parallel.
+`s3pd` is both a python library and a command line tool to download files from S3 in parallel.
 
-Compared to e.g. `boto3`, `s3cp` is able to efficiently download chunks of files in parallel, resulting in a x5 to x10 download speed compared to `AWSCLI` / `boto`.
+Compared to e.g. `boto3`, `s3pd` is able to efficiently download chunks of files in parallel, resulting in a x5 to x10 download speed compared to `AWSCLI` / `boto`.
 
 Installation
 ------------
 
 .. code-block:: bash
 
-    $ pip install s3cp
+    $ pip install s3pd
 
 Usage: CLI
 ----------
@@ -21,7 +21,7 @@ Usage: CLI
     Download S3 files concurrently.
     
     Usage:
-        s3cp [options] <SOURCE> [<DESTINATION>]
+        s3pd [options] <SOURCE> [<DESTINATION>]
     
     Options:
         -p,--processes=<PROCESSES>      Number of concurrent download processes

@@ -1,7 +1,7 @@
 """Download S3 files concurrently.
 
 Usage:
-    s3cp [options] <SOURCE> [<DESTINATION>]
+    s3pd [options] <SOURCE> [<DESTINATION>]
 
 Options:
     -p,--processes=<PROCESSES>      Number of concurrent download processes
