@@ -1,7 +1,7 @@
 """Download S3 files concurrently.
 
 Usage:
-    s3cp [options] <SOURCE> [<DESTINATION>]
+    s3pd [options] <SOURCE> [<DESTINATION>]
 
 Options:
     -p,--processes=<PROCESSES>      Number of concurrent download processes
@@ -12,10 +12,10 @@ Options:
 """
 from docopt import docopt
 
-from s3pd import s3pd
+from s3pd import s3pd, version
 
 def main():
-    args = docopt(__doc__, version='1.0.0')
+    args = docopt(__doc__, version=version.__version__)
 
     source = args['<SOURCE>']
     destination = args['<DESTINATION>']
