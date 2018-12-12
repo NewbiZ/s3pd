@@ -2,7 +2,7 @@ import mmap
 import os
 import contextlib
 from tempfile import NamedTemporaryFile
-from multiprocessing import Pool, process
+from multiprocessing import Pool, current_process
 from urllib.parse import urlparse
 
 import botocore
@@ -136,7 +136,7 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     chunks = create_chunks(chunksize, filesize)
 
     # Prevent multiprocessing children to fork
-    if process.current_process().name != 'MainProcess':
+    if current_process().daemon:
         processes = 1
 
     with shm_file(filesize, destination) as (shmfile, shmfilename):
