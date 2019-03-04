@@ -16,8 +16,8 @@ setup(
     description='S3 parallel downloader',
     long_description='Download files from S3 using multiple processes',
     install_requires=[
-        'boto3 ==1.7.14',
-        'botocore ==1.10.14',
+        'boto3 >=1.7.14, <2',
+        'botocore >=1.10.14, <2',
         'docopt >=0.6.2',
     ],
     entry_points="""
