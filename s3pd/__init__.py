@@ -2,7 +2,7 @@ import mmap
 import os
 import contextlib
 from tempfile import NamedTemporaryFile
-from multiprocessing import Pool
+from multiprocessing import Pool, current_process
 from urllib.parse import urlparse
 
 import botocore
@@ -116,7 +116,7 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     :param url: S3 address of the file to download, using the 's3' scheme
         such as `s3://bucket-name/file/to/download.txt`.
     :param processes: Number of processes to use for the download, default
-        to 8.
+        to 8. Forced to 1 if not the main process when using multiprocessing.
     :param chunksize: Size of each chunk to download, default to 64MB.
     :param destination: Destination path for the downloaded file, including the
         filename. If `None`, a temporary file is created in /dev/shm and you
@@ -134,6 +134,10 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     client = create_client(signed)
     filesize = get_filesize(client, bucket, key)
     chunks = create_chunks(chunksize, filesize)
+
+    # Prevent multiprocessing children to fork
+    if current_process().daemon:
+        processes = 1
 
     with shm_file(filesize, destination) as (shmfile, shmfilename):
         download_tasks = [
