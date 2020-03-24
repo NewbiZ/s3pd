@@ -4,6 +4,7 @@ import contextlib
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, current_process
 from urllib.parse import urlparse
+from io import BytesIO
 
 import botocore
 import boto3
@@ -103,6 +104,34 @@ def download_chunk(bucket, key, shmfileno, offset_first, offset_last, signed):
             Range='bytes=%s-%s' % (offset_first, offset_last))['Body']
         chunk._raw_stream.readinto(shmmap)
 
+def resolve_link(bucket, key, signed, depth=10):
+    # Stop after too many link indirections
+    assert depth > 0, 'Too many levels of link indirections'
+
+    client = create_client(signed)
+    filesize = get_filesize(client, bucket, key)
+
+    link_sentinel = '#S3PDLINK#'
+    with BytesIO() as stream:
+        client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
+        content = stream.getvalue().decode('utf-8').strip()
+        # Check whether this file is a link
+        if content.startswith(link_sentinel):
+            url = content[len(link_sentinel):]
+            parsed_url = urlparse(url)
+            key = parsed_url.path
+            if key.startswith('/'):
+                key = key[1:]
+            return resolve_link(
+                # In case the link url ommits the s3://bucket/ part, then
+                # assume it is a key relative to the current bucket
+                bucket=parsed_url.netloc or bucket,
+                key=key,
+                signed=signed,
+                depth=depth-1)
+        # If not, return the key
+        return bucket, key
+
 def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
         signed=True):
     """Main entry point to download an s3 file in parallel.
@@ -127,9 +156,10 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     assert chunksize % mmap.ALLOCATIONGRANULARITY == 0
 
     parsed_url = urlparse(url)
-    scheme = parsed_url.scheme
     bucket = parsed_url.netloc
     key = parsed_url.path[1:]
+
+    bucket, key = resolve_link(bucket, key, signed)
 
     client = create_client(signed)
     filesize = get_filesize(client, bucket, key)
