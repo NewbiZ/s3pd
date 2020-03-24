@@ -111,6 +111,11 @@ def resolve_link(bucket, key, signed, depth=10):
     client = create_client(signed)
     filesize = get_filesize(client, bucket, key)
 
+    # There is no need to resolve files with a size >1KB, these could
+    # realistically be links
+    if filesize > 1024:
+        return bucket, key
+
     link_sentinel = '#S3PDLINK#'
     with BytesIO() as stream:
         client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
