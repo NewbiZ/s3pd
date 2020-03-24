@@ -111,7 +111,7 @@ def resolve_link(bucket, key, signed, depth=10):
     client = create_client(signed)
     filesize = get_filesize(client, bucket, key)
 
-    # There is no need to resolve files with a size >1KB, these could
+    # There is no need to resolve files with a size >1KB, these could not
     # realistically be links
     if filesize > 1024:
         return bucket, key
@@ -134,7 +134,6 @@ def resolve_link(bucket, key, signed, depth=10):
                 key=key,
                 signed=signed,
                 depth=depth-1)
-        # If not, return the key
         return bucket, key
 
 def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
