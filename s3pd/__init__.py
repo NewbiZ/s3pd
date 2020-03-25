@@ -120,21 +120,23 @@ def resolve_link(bucket, key, signed, depth=10):
     with BytesIO() as stream:
         client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
         content = stream.getvalue().decode('utf-8').strip()
-        # Check whether this file is a link
-        if content.startswith(link_sentinel):
-            url = content[len(link_sentinel):]
-            parsed_url = urlparse(url)
-            key = parsed_url.path
-            if key.startswith('/'):
-                key = key[1:]
-            return resolve_link(
-                # In case the link url ommits the s3://bucket/ part, then
-                # assume it is a key relative to the current bucket
-                bucket=parsed_url.netloc or bucket,
-                key=key,
-                signed=signed,
-                depth=depth-1)
+
+    # Check whether this file is a link
+    if not content.startswith(link_sentinel):
         return bucket, key
+
+    url = content[len(link_sentinel):]
+    parsed_url = urlparse(url)
+    path = parsed_url.path
+
+    return resolve_link(
+        # In case the link url ommits the s3://bucket/ part, then
+        # assume it is a key relative to the current bucket
+        bucket=parsed_url.netloc or bucket,
+        # S3 keys do not start with /
+        key=path if not path.startswith('/') else path[1:],
+        signed=signed,
+        depth=depth-1)
 
 def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
         signed=True):
