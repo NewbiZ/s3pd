@@ -104,11 +104,10 @@ def download_chunk(bucket, key, shmfileno, offset_first, offset_last, signed):
             Range='bytes=%s-%s' % (offset_first, offset_last))['Body']
         chunk._raw_stream.readinto(shmmap)
 
-def resolve_link(bucket, key, signed, depth=10):
+def resolve_link(bucket, key, client, depth=10):
     # Stop after too many link indirections
     assert depth > 0, 'Too many levels of link indirections'
 
-    client = create_client(signed)
     filesize = get_filesize(client, bucket, key)
 
     # There is no need to resolve files with a size >1KB, these could not
@@ -135,7 +134,7 @@ def resolve_link(bucket, key, signed, depth=10):
         bucket=parsed_url.netloc or bucket,
         # S3 keys do not start with /
         key=path if not path.startswith('/') else path[1:],
-        signed=signed,
+        client=client,
         depth=depth-1)
 
 def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
@@ -164,10 +163,10 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     parsed_url = urlparse(url)
     bucket = parsed_url.netloc
     key = parsed_url.path[1:]
-
-    bucket, key = resolve_link(bucket, key, signed)
-
     client = create_client(signed)
+
+    bucket, key = resolve_link(bucket, key, client)
+
     filesize = get_filesize(client, bucket, key)
     chunks = create_chunks(chunksize, filesize)
 
