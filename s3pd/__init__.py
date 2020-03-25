@@ -10,7 +10,7 @@ import botocore
 import boto3
 
 
-LINK_SENTINEL = '#S3PDLINK#'
+LINK_SENTINEL = '#S3LINK#'
 
 @contextlib.contextmanager
 def shm_file(size, destination):
