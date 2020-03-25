@@ -9,6 +9,9 @@ from io import BytesIO
 import botocore
 import boto3
 
+
+LINK_SENTINEL = '#S3PDLINK#'
+
 @contextlib.contextmanager
 def shm_file(size, destination):
     """Create a named shared memory and return its file object.
@@ -115,16 +118,15 @@ def resolve_link(bucket, key, client, depth=10):
     if filesize > 1024:
         return bucket, key
 
-    link_sentinel = '#S3PDLINK#'
     with BytesIO() as stream:
         client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
         content = stream.getvalue().decode('utf-8').strip()
 
     # Check whether this file is a link
-    if not content.startswith(link_sentinel):
+    if not content.startswith(LINK_SENTINEL):
         return bucket, key
 
-    url = content[len(link_sentinel):]
+    url = content[len(LINK_SENTINEL):]
     parsed_url = urlparse(url)
     path = parsed_url.path
 
