@@ -4,9 +4,13 @@ import contextlib
 from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, current_process
 from urllib.parse import urlparse
+from io import BytesIO
 
 import botocore
 import boto3
+
+
+LINK_SENTINEL = '#S3LINK#'
 
 @contextlib.contextmanager
 def shm_file(size, destination):
@@ -103,6 +107,38 @@ def download_chunk(bucket, key, shmfileno, offset_first, offset_last, signed):
             Range='bytes=%s-%s' % (offset_first, offset_last))['Body']
         chunk._raw_stream.readinto(shmmap)
 
+def resolve_link(bucket, key, client, depth=10):
+    # Stop after too many link indirections
+    assert depth > 0, 'Too many levels of link indirections'
+
+    filesize = get_filesize(client, bucket, key)
+
+    # There is no need to resolve files with a size >1KB, these could not
+    # realistically be links
+    if filesize > 1024:
+        return bucket, key
+
+    with BytesIO() as stream:
+        client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
+        content = stream.getvalue().decode('utf-8').strip()
+
+    # Check whether this file is a link
+    if not content.startswith(LINK_SENTINEL):
+        return bucket, key
+
+    url = content[len(LINK_SENTINEL):]
+    parsed_url = urlparse(url)
+    path = parsed_url.path
+
+    return resolve_link(
+        # In case the link url ommits the s3://bucket/ part, then
+        # assume it is a key relative to the current bucket
+        bucket=parsed_url.netloc or bucket,
+        # S3 keys do not start with /
+        key=path if not path.startswith('/') else path[1:],
+        client=client,
+        depth=depth-1)
+
 def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
         signed=True):
     """Main entry point to download an s3 file in parallel.
@@ -127,11 +163,12 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     assert chunksize % mmap.ALLOCATIONGRANULARITY == 0
 
     parsed_url = urlparse(url)
-    scheme = parsed_url.scheme
     bucket = parsed_url.netloc
     key = parsed_url.path[1:]
-
     client = create_client(signed)
+
+    bucket, key = resolve_link(bucket, key, client)
+
     filesize = get_filesize(client, bucket, key)
     chunks = create_chunks(chunksize, filesize)
 
