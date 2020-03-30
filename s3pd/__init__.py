@@ -5,10 +5,13 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, current_process
 from urllib.parse import urlparse
 from io import BytesIO
+import logging
 
 import botocore
 import boto3
 
+
+LOGGER = logging.getLogger(__name__)
 
 LINK_SENTINEL = '#S3LINK#'
 
@@ -47,15 +50,21 @@ def shm_map(fileno, offset, size):
     yield shm
     shm.close()
 
-def get_filesize(client, bucket, key):
+def get_filesize(client, bucket, key, version=None):
     """Return the size of file on S3.
 
     :param client: The client to use for performing the query.
     :param bucket: Name of the S3 bucket.
     :param key: Path inside the bucket (without leading `/`)
+    :param version: The file version to retrieve, or None
     :return: The file size, in bytes.
     """
-    return client.head_object(Bucket=bucket, Key=key)['ContentLength']
+    args = {
+        'Bucket': bucket,
+        'Key': key,
+        **({'VersionId': version} if version else {}),
+    }
+    return client.head_object(**args)['ContentLength']
 
 def create_chunks(chunksize, filesize):
     """Generate list of constant size chunks from a filesize.
@@ -89,7 +98,8 @@ def create_client(signed=True):
             's3',
             config=botocore.config.Config(signature_version=botocore.UNSIGNED))
 
-def download_chunk(bucket, key, shmfileno, offset_first, offset_last, signed):
+def download_chunk(
+        bucket, key, shmfileno, offset_first, offset_last, signed, version=None):
     """Worker function to download a chunk of the file.
 
     :param bucket: Name of the S3 bucket.
@@ -97,21 +107,33 @@ def download_chunk(bucket, key, shmfileno, offset_first, offset_last, signed):
     :param shmfileno: File descriptor for an opened destination file.
     :param offset_first: Start position of the chunk to download.
     :param offset_last: Last position of the chunk to download.
+    :param version: The file version to retrieve, or None
     :return: Nothing, the chunk is directly copied in the destination file.
     """
     client = create_client(signed)
+    args = {
+        'Bucket': bucket,
+        'Key': key,
+        'Range': 'bytes=%s-%s' % (offset_first, offset_last),
+        **({'VersionId': version} if version else {}),
+    }
     with shm_map(shmfileno, offset_first, offset_last - offset_first + 1) as shmmap:
-        chunk = client.get_object(
-            Bucket=bucket,
-            Key=key,
-            Range='bytes=%s-%s' % (offset_first, offset_last))['Body']
+        chunk = client.get_object(**args)['Body']
         chunk._raw_stream.readinto(shmmap)
 
-def resolve_link(bucket, key, client, depth=10):
+def resolve_link(bucket, key, client, depth=10, version=None):
+    """Resolve S3 links to target key.
+
+    :param bucket: Name of the S3 bucket.
+    :param key: Path inside the bucket (without leading `/`)
+    :param client: boto3 client to use when performing requests.
+    :param depth: Maximum number of link indirections before stopping.
+    :param version: The file version to retrieve, or None
+    """
     # Stop after too many link indirections
     assert depth > 0, 'Too many levels of link indirections'
 
-    filesize = get_filesize(client, bucket, key)
+    filesize = get_filesize(client, bucket, key, version=version)
 
     # There is no need to resolve files with a size >1KB, these could not
     # realistically be links
@@ -126,6 +148,8 @@ def resolve_link(bucket, key, client, depth=10):
     if not content.startswith(LINK_SENTINEL):
         return bucket, key
 
+    if version:
+        LOGGER.debug('Version ignored when resolving links')
     url = content[len(LINK_SENTINEL):]
     parsed_url = urlparse(url)
     path = parsed_url.path
@@ -140,7 +164,7 @@ def resolve_link(bucket, key, client, depth=10):
         depth=depth-1)
 
 def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
-        signed=True):
+        signed=True, version=None):
     """Main entry point to download an s3 file in parallel.
 
     Example to download a file locally:
@@ -167,7 +191,7 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     key = parsed_url.path[1:]
     client = create_client(signed)
 
-    bucket, key = resolve_link(bucket, key, client)
+    bucket, key = resolve_link(bucket, key, client, version=version)
 
     filesize = get_filesize(client, bucket, key)
     chunks = create_chunks(chunksize, filesize)
@@ -178,7 +202,7 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
 
     with shm_file(filesize, destination) as (shmfile, shmfilename):
         download_tasks = [
-            (bucket, key, shmfile.fileno(), *chunk, signed)
+            (bucket, key, shmfile.fileno(), *chunk, signed, version)
             for chunk in chunks]
 
         if processes == 1:
