@@ -133,7 +133,7 @@ def resolve_link(bucket, key, client, depth=10, version=None):
     # Stop after too many link indirections
     assert depth > 0, 'Too many levels of link indirections'
 
-    filesize = get_filesize(client, bucket, key, version=version)
+    filesize = get_filesize(client, bucket, key)
 
     # There is no need to resolve files with a size >1KB, these could not
     # realistically be links
@@ -193,7 +193,7 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
 
     bucket, key = resolve_link(bucket, key, client, version=version)
 
-    filesize = get_filesize(client, bucket, key)
+    filesize = get_filesize(client, bucket, key, version=version)
     chunks = create_chunks(chunksize, filesize)
 
     # Prevent multiprocessing children to fork
