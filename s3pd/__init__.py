@@ -161,7 +161,8 @@ def resolve_link(bucket, key, client, depth=10):
         client=client,
         depth=depth-1)
 
-def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
+def s3pd(
+        url, processes=8, chunksize=67108864, destination=None, func=None,
         signed=True, version=None):
     """Main entry point to download an s3 file in parallel.
 
