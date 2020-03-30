@@ -5,13 +5,10 @@ from tempfile import NamedTemporaryFile
 from multiprocessing import Pool, current_process
 from urllib.parse import urlparse
 from io import BytesIO
-import logging
 
 import botocore
 import boto3
 
-
-LOGGER = logging.getLogger(__name__)
 
 LINK_SENTINEL = '#S3LINK#'
 
@@ -121,14 +118,13 @@ def download_chunk(
         chunk = client.get_object(**args)['Body']
         chunk._raw_stream.readinto(shmmap)
 
-def resolve_link(bucket, key, client, depth=10, version=None):
+def resolve_link(bucket, key, client, depth=10):
     """Resolve S3 links to target key.
 
     :param bucket: Name of the S3 bucket.
     :param key: Path inside the bucket (without leading `/`)
     :param client: boto3 client to use when performing requests.
     :param depth: Maximum number of link indirections before stopping.
-    :param version: The file version to retrieve, or None
     """
     # Stop after too many link indirections
     assert depth > 0, 'Too many levels of link indirections'
@@ -142,14 +138,16 @@ def resolve_link(bucket, key, client, depth=10, version=None):
 
     with BytesIO() as stream:
         client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
-        content = stream.getvalue().decode('utf-8').strip()
+        # In case decoding utf-8 fails, then we are not in a presence of a link
+        try:
+            content = stream.getvalue().decode('utf-8').strip()
+        except:
+            return bucket, key
 
     # Check whether this file is a link
     if not content.startswith(LINK_SENTINEL):
         return bucket, key
 
-    if version:
-        LOGGER.debug('Version ignored when resolving links')
     url = content[len(LINK_SENTINEL):]
     parsed_url = urlparse(url)
     path = parsed_url.path
@@ -191,7 +189,7 @@ def s3pd(url, processes=8, chunksize=67108864, destination=None, func=None,
     key = parsed_url.path[1:]
     client = create_client(signed)
 
-    bucket, key = resolve_link(bucket, key, client, version=version)
+    bucket, key = resolve_link(bucket, key, client)
 
     filesize = get_filesize(client, bucket, key, version=version)
     chunks = create_chunks(chunksize, filesize)
