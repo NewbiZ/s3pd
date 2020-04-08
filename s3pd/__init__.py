@@ -118,12 +118,13 @@ def download_chunk(
         chunk = client.get_object(**args)['Body']
         chunk._raw_stream.readinto(shmmap)
 
-def resolve_link(bucket, key, client, depth=10):
+def resolve_link(bucket, key, client, version, depth=10):
     """Resolve S3 links to target key.
 
     :param bucket: Name of the S3 bucket.
     :param key: Path inside the bucket (without leading `/`)
     :param client: boto3 client to use when performing requests.
+    :param version: Version of the key object.
     :param depth: Maximum number of link indirections before stopping.
     """
     # Stop after too many link indirections
@@ -134,7 +135,7 @@ def resolve_link(bucket, key, client, depth=10):
     # There is no need to resolve files with a size >1KB, these could not
     # realistically be links
     if filesize > 1024:
-        return bucket, key
+        return bucket, key, version
 
     with BytesIO() as stream:
         client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
@@ -142,11 +143,13 @@ def resolve_link(bucket, key, client, depth=10):
         try:
             content = stream.getvalue().decode('utf-8').strip()
         except:
-            return bucket, key
+            # The download fileobj is not provided with version, i.e. HEAD,
+            # so it should return the HEAD object as well
+            return bucket, key, None
 
     # Check whether this file is a link
     if not content.startswith(LINK_SENTINEL):
-        return bucket, key
+        return bucket, key, version
 
     url = content[len(LINK_SENTINEL):]
     parsed_url = urlparse(url)
@@ -159,6 +162,8 @@ def resolve_link(bucket, key, client, depth=10):
         # S3 keys do not start with /
         key=path if not path.startswith('/') else path[1:],
         client=client,
+        # Always get the HEAD of the object
+        version=None,
         depth=depth-1)
 
 def s3pd(
@@ -190,7 +195,7 @@ def s3pd(
     key = parsed_url.path[1:]
     client = create_client(signed)
 
-    bucket, key = resolve_link(bucket, key, client)
+    bucket, key, version = resolve_link(bucket, key, client, version)
 
     filesize = get_filesize(client, bucket, key, version=version)
     chunks = create_chunks(chunksize, filesize)
