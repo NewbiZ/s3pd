@@ -22,10 +22,10 @@ def shm_file(size, destination):
     :return: A tuple `(file object, path)` to be used from a context manager.
     """
     if destination:
-        shmfile = open(destination, 'w+b')
-        os.truncate(shmfile.fileno(), size)
-        shmfile.seek(0)
-        yield shmfile, destination
+        with open(destination, 'w+b') as shmfile:
+            os.truncate(shmfile.fileno(), size)
+            shmfile.seek(0)
+            yield shmfile, destination
     else:
         with NamedTemporaryFile(mode='wb', prefix='s3-', dir='/dev/shm') as shmfile:
             os.truncate(shmfile.fileno(), size)
