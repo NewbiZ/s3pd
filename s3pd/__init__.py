@@ -118,6 +118,7 @@ def download_chunk(
         chunk = client.get_object(**args)['Body']
         chunk._raw_stream.readinto(shmmap)
 
+
 def resolve_link(bucket, key, client, depth=10):
     """Resolve S3 links to target key.
 
@@ -129,10 +130,19 @@ def resolve_link(bucket, key, client, depth=10):
     # Stop after too many link indirections
     assert depth > 0, 'Too many levels of link indirections'
 
-    filesize = get_filesize(client, bucket, key)
+    new_bucket, new_key = check_link_target(bucket, key, client)
+    if new_bucket == bucket and new_key == key:
+        return new_bucket, new_key
 
-    # There is no need to resolve files with a size >1KB, these could not
-    # realistically be links
+    return resolve_link(
+        bucket=new_bucket,
+        key=new_key,
+        client=client,
+        depth=depth-1)
+
+
+def check_link_target(bucket, key, client):
+    filesize = get_filesize(client, bucket, key)
     if filesize > 1024:
         return bucket, key
 
@@ -140,26 +150,27 @@ def resolve_link(bucket, key, client, depth=10):
         client.download_fileobj(Bucket=bucket, Key=key, Fileobj=stream)
         # In case decoding utf-8 fails, then we are not in a presence of a link
         try:
-            content = stream.getvalue().decode('utf-8').strip()
-        except:
+            content = stream.getvalue().decode("utf-8").strip()
+        except UnicodeDecodeError:
             return bucket, key
 
     # Check whether this file is a link
     if not content.startswith(LINK_SENTINEL):
         return bucket, key
 
-    url = content[len(LINK_SENTINEL):]
+    url = content[len(LINK_SENTINEL) :]
     parsed_url = urlparse(url)
     path = parsed_url.path
 
-    return resolve_link(
-        # In case the link url ommits the s3://bucket/ part, then
-        # assume it is a key relative to the current bucket
-        bucket=parsed_url.netloc or bucket,
-        # S3 keys do not start with /
-        key=path if not path.startswith('/') else path[1:],
-        client=client,
-        depth=depth-1)
+    # In case the link url ommits the s3://bucket/ part, then
+    # assume it is a key relative to the current bucket
+    new_bucket = parsed_url.netloc or bucket
+
+    # S3 keys do not start with /
+    new_key = path if not path.startswith('/') else path[1:]
+
+    return new_bucket, new_key
+
 
 def s3pd(
         url, processes=8, chunksize=67108864, destination=None, func=None,
