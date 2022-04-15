@@ -206,6 +206,9 @@ def s3pd(
     filesize = get_filesize(client, bucket, key, version=version)
     chunks = create_chunks(chunksize, filesize)
 
+    # Don't fork more children than chunks
+    processes = min(processes, len(chunks))
+
     # Prevent multiprocessing children to fork
     if current_process().daemon:
         processes = 1
